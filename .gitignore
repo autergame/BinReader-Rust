@@ -1,0 +1,13 @@
+files/*.bin
+files/*.json
+
+debug/
+target/
+
+Cargo.lock
+
+**/*.rs.bk
+
+*.pdb
+
+.vscode/

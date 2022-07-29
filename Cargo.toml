@@ -1,0 +1,10 @@
+[package]
+name = "binreader-rust"
+version = "0.1.0"
+authors = ["autergame"]
+
+[dependencies]
+byteorder = "1.4.3"
+json = "0.12.4"
+dtoa = "1.0.2"
+clap = "3.2.15"
