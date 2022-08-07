@@ -1,12 +1,14 @@
 extern crate byteorder;
 extern crate clap;
 extern crate dtoa;
+extern crate glob;
 extern crate json;
 
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read, Write};
 
 use std::collections::HashMap;
+use std::path::Path;
 
 mod lol_bin_hashes;
 mod lol_bin_json_read;
@@ -35,7 +37,7 @@ fn main() {
                 .arg(
                     clap::Arg::new("OUTPUT")
                         .help("Sets the output file to use")
-                        .required(true)
+                        .required(false)
                         .index(2),
                 ),
         )
@@ -51,7 +53,7 @@ fn main() {
                 .arg(
                     clap::Arg::new("OUTPUT")
                         .help("Sets the output file to use")
-                        .required(true)
+                        .required(false)
                         .index(2),
                 ),
         )
@@ -59,41 +61,76 @@ fn main() {
 
     if let Some(matches) = matches.subcommand_matches("decode") {
         let input = matches.get_one::<String>("INPUT").unwrap();
-        let output = matches.get_one::<String>("OUTPUT").unwrap();
+        let output = matches.get_one::<String>("OUTPUT");
 
         let mut hash_map: HashMap<u64, String> = HashMap::new();
         add_to_hash_map(&["path", "patch", "value"], &mut hash_map);
 
         println!("Loading hashes");
-        let mut lines = load_hashes_from_file("files/hashes.bintypes.txt", &mut hash_map);
-        lines += load_hashes_from_file("files/hashes.binfields.txt", &mut hash_map);
-        lines += load_hashes_from_file("files/hashes.binhashes.txt", &mut hash_map);
-        lines += load_hashes_from_file("files/hashes.binentries.txt", &mut hash_map);
-        lines += load_hashes_from_file("files/hashes.lcu.txt", &mut hash_map);
-        lines += load_hashes_from_file("files/hashes.game.txt", &mut hash_map);
+        let mut lines =
+            load_hashes_from_file(Path::new("files/hashes.bintypes.txt"), &mut hash_map);
+        lines += load_hashes_from_file(Path::new("files/hashes.binfields.txt"), &mut hash_map);
+        lines += load_hashes_from_file(Path::new("files/hashes.binhashes.txt"), &mut hash_map);
+        lines += load_hashes_from_file(Path::new("files/hashes.binentries.txt"), &mut hash_map);
+        lines += load_hashes_from_file(Path::new("files/hashes.lcu.txt"), &mut hash_map);
+        lines += load_hashes_from_file(Path::new("files/hashes.game.txt"), &mut hash_map);
         println!("Loaded total of hashes: {lines}");
         println!("Finished loading hashes.\n");
 
-        let contents = read_to_u8(input);
-        let bin_file = lol_bin_read::read_bin(&contents);
-        let jsonstr = lol_bin_json_write::convert_bin_to_json(&bin_file, &mut hash_map);
-        write_u8(output, jsonstr.as_bytes());
+        if let Some(output) = output {
+            let contents = read_to_u8(Path::new(input));
+            let bin_file = lol_bin_read::read_bin(&contents);
+            let jsonstr = lol_bin_json_write::convert_bin_to_json(&bin_file, &mut hash_map);
+            write_u8(Path::new(output), jsonstr.as_bytes());
+        } else {
+            let input_paths = glob::glob(input)
+                .expect("Failed to read glob pattern")
+                .filter_map(Result::ok);
+
+            for mut input_path in input_paths {
+                let contents = read_to_u8(&input_path);
+                let bin_file = lol_bin_read::read_bin(&contents);
+                let jsonstr = lol_bin_json_write::convert_bin_to_json(&bin_file, &mut hash_map);
+                input_path.set_extension("json");
+                write_u8(&input_path, jsonstr.as_bytes());
+				println!("");
+            }
+        }
     } else if let Some(matches) = matches.subcommand_matches("encode") {
         let input = matches.get_one::<String>("INPUT").unwrap();
-        let output = matches.get_one::<String>("OUTPUT").unwrap();
+        let output = matches.get_one::<String>("OUTPUT");
 
-        let contents = read_string(input);
-        let bin_file = lol_bin_json_read::convert_json_to_bin(&contents);
-        let bin = lol_bin_write::write_bin(&bin_file);
-        write_u8(output, &bin);
+        if let Some(output) = output {
+            let contents = read_string(Path::new(input));
+            let bin_file = lol_bin_json_read::convert_json_to_bin(&contents);
+            let bin = lol_bin_write::write_bin(&bin_file);
+            write_u8(Path::new(output), &bin);
+        } else {
+            let input_paths = glob::glob(input)
+                .expect("Failed to read glob pattern")
+                .filter_map(Result::ok);
+
+            for mut input_path in input_paths {
+                let contents = read_string(&input_path);
+                let bin_file = lol_bin_json_read::convert_json_to_bin(&contents);
+                let bin = lol_bin_write::write_bin(&bin_file);
+                input_path.set_extension("bin");
+                write_u8(&input_path, &bin);
+				println!("");
+            }
+        }
     }
 }
 
-fn load_hashes_from_file(path: &str, hash_map: &mut HashMap<u64, String>) -> u32 {
+fn load_hashes_from_file(path: &Path, hash_map: &mut HashMap<u64, String>) -> u32 {
     let file = match File::open(path) {
         Ok(file) => file,
         Err(err) => {
-            println!("Could not open hash file: {path} error: {err}");
+            println!(
+                "Could not open hash file: {} error: {}",
+                path.to_str().unwrap(),
+                err
+            );
             return 0;
         }
     };
@@ -104,7 +141,7 @@ fn load_hashes_from_file(path: &str, hash_map: &mut HashMap<u64, String>) -> u32
 
     while reader
         .read_line(&mut line)
-        .unwrap_or_else(|_| panic!("Could not read line: {}", path))
+        .unwrap_or_else(|_| panic!("Could not read line: {}", path.to_str().unwrap()))
         != 0
     {
         let mut line_split = line.split(' ');
@@ -138,7 +175,7 @@ fn load_hashes_from_file(path: &str, hash_map: &mut HashMap<u64, String>) -> u32
         line.clear();
     }
 
-    println!("File: {path} loaded: {lines} lines");
+    println!("File: {} loaded: {} lines", path.to_str().unwrap(), lines);
 
     lines
 }
@@ -153,27 +190,27 @@ fn add_to_hash_map(hashes_to_insert: &[&str], hash_map: &mut HashMap<u64, String
     }
 }
 
-fn read_to_u8(path: &str) -> Vec<u8> {
+fn read_to_u8(path: &Path) -> Vec<u8> {
     let mut file = File::open(path).expect("Could not open file");
     let mut contents: Vec<u8> = Vec::new();
-    println!("Reading file: {path}");
+    println!("Reading file: {}", path.to_str().unwrap());
     file.read_to_end(&mut contents)
         .expect("Could not read file");
     println!("Finished reading file");
     contents
 }
 
-fn write_u8(path: &str, v: &[u8]) {
+fn write_u8(path: &Path, v: &[u8]) {
     let mut file = File::create(path).expect("Could not create file");
-    println!("Writing to file: {path}");
+    println!("Writing to file: {}", path.to_str().unwrap());
     file.write_all(v).expect("Could not write to file");
     println!("Finished writing to file");
 }
 
-fn read_string(path: &str) -> String {
+fn read_string(path: &Path) -> String {
     let mut file = File::open(path).expect("Could not open file");
     let mut contents = String::new();
-    println!("Reading file: {path}");
+    println!("Reading file: {}", path.to_str().unwrap());
     file.read_to_string(&mut contents)
         .expect("Could not read file");
     println!("Finished reading file");

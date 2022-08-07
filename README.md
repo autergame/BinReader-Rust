@@ -16,11 +16,13 @@ League Of Legends Bin Reader And Writter In Rust
 decode bin to json:
 ```
 binreader-rust decode skin0.bin skin0.json
+binreader-rust decode *.bin
 ```
 
 encode json to bin: 
 ```
 binreader-rust encode skin0.json skin0.bin
+binreader-rust encode *.json
 ```
 
 ![alt text](BinReader-Rust_image.png)
