@@ -1,5 +1,5 @@
 # BinReader-Rust
-League Of Legends Bin Reader And Writter In Rust
+League Of Legends Bin Reader And Writter Using Rust
 
 ### Hashes at:
 * https://github.com/CommunityDragon/CDTB/tree/master/cdragontoolbox
