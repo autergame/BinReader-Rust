@@ -1,8 +1,7 @@
-use lol_bin_struct::*;
-
-use std::collections::HashMap;
+use structs::*;
 
 use json::{codegen::Generator, JsonValue};
+use std::collections::HashMap;
 
 fn hash_u32_to_string(value: u32, hash_map: &mut HashMap<u64, String>) -> String {
     let str_value = hash_map.get(&(value as u64));

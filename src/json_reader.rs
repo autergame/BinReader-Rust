@@ -1,5 +1,5 @@
-use lol_bin_hashes;
-use lol_bin_struct::*;
+use hashes;
+use structs::*;
 
 use json::JsonValue;
 
@@ -7,7 +7,7 @@ fn string_to_hash_u32(value: &str) -> u32 {
     if let Some(hex) = hex_or_decimal_from_string_u32(value) {
         hex
     } else {
-        lol_bin_hashes::fnv1a(value)
+        hashes::fnv1a(value)
     }
 }
 
@@ -15,7 +15,7 @@ fn string_to_hash_u64(value: &str) -> u64 {
     if let Some(hex) = hex_or_decimal_from_string_u64(value) {
         hex
     } else {
-        lol_bin_hashes::xxhash(value)
+        hashes::xxhash(value)
     }
 }
 

@@ -10,21 +10,20 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::collections::HashMap;
 use std::path::Path;
 
-mod lol_bin_hashes;
-mod lol_bin_json_read;
-mod lol_bin_json_write;
-mod lol_bin_read;
-mod lol_bin_struct;
-mod lol_bin_write;
+mod hashes;
+mod json_reader;
+mod json_writer;
+mod reader;
+mod structs;
+mod writer;
 
 fn main() {
     let matches = clap::Command::new("BinReader-Rust")
-        .version("0.1.0")
+        .version("0.3.0")
         .author("https://github.com/autergame/")
         .about("League Of Legends Bin Reader And Writter")
         .arg_required_else_help(true)
         .subcommand_required(true)
-        .mut_subcommand("help", |subcmd| subcmd.hide(true))
         .subcommand(
             clap::Command::new("decode")
                 .about("Decodes the given file")
@@ -79,8 +78,8 @@ fn main() {
 
         if let Some(output) = output {
             let contents = read_to_u8(Path::new(input));
-            let bin_file = lol_bin_read::read_bin(&contents);
-            let jsonstr = lol_bin_json_write::convert_bin_to_json(&bin_file, &mut hash_map);
+            let bin_file = reader::read_bin(&contents);
+            let jsonstr = json_writer::convert_bin_to_json(&bin_file, &mut hash_map);
             write_u8(Path::new(output), jsonstr.as_bytes());
         } else {
             let input_paths = glob::glob(input)
@@ -89,11 +88,11 @@ fn main() {
 
             for mut input_path in input_paths {
                 let contents = read_to_u8(&input_path);
-                let bin_file = lol_bin_read::read_bin(&contents);
-                let jsonstr = lol_bin_json_write::convert_bin_to_json(&bin_file, &mut hash_map);
+                let bin_file = reader::read_bin(&contents);
+                let jsonstr = json_writer::convert_bin_to_json(&bin_file, &mut hash_map);
                 input_path.set_extension("json");
                 write_u8(&input_path, jsonstr.as_bytes());
-				println!("");
+                println!();
             }
         }
     } else if let Some(matches) = matches.subcommand_matches("encode") {
@@ -102,8 +101,8 @@ fn main() {
 
         if let Some(output) = output {
             let contents = read_string(Path::new(input));
-            let bin_file = lol_bin_json_read::convert_json_to_bin(&contents);
-            let bin = lol_bin_write::write_bin(&bin_file);
+            let bin_file = json_reader::convert_json_to_bin(&contents);
+            let bin = writer::write_bin(&bin_file);
             write_u8(Path::new(output), &bin);
         } else {
             let input_paths = glob::glob(input)
@@ -112,53 +111,64 @@ fn main() {
 
             for mut input_path in input_paths {
                 let contents = read_string(&input_path);
-                let bin_file = lol_bin_json_read::convert_json_to_bin(&contents);
-                let bin = lol_bin_write::write_bin(&bin_file);
+                let bin_file = json_reader::convert_json_to_bin(&contents);
+                let bin = writer::write_bin(&bin_file);
                 input_path.set_extension("bin");
                 write_u8(&input_path, &bin);
-				println!("");
+                println!();
             }
         }
     }
 }
 
 fn load_hashes_from_file(path: &Path, hash_map: &mut HashMap<u64, String>) -> u32 {
+    let path_str = path.to_str().unwrap();
+
     let file = match File::open(path) {
         Ok(file) => file,
-        Err(err) => {
-            println!(
-                "Could not open hash file: {} error: {}",
-                path.to_str().unwrap(),
-                err
-            );
+        Err(error) => {
+            println!("Could not open hash file: {} error: {}", path_str, error);
             return 0;
         }
     };
 
-    let mut lines: u32 = 0;
+    let mut lines = 0;
     let mut reader = BufReader::new(file);
     let mut line = String::with_capacity(1024);
 
-    while reader
-        .read_line(&mut line)
-        .unwrap_or_else(|_| panic!("Could not read line: {}", path.to_str().unwrap()))
-        != 0
-    {
+    let msg = |error| {
+        println!(
+            "Could not read line hash file: {} error: {}",
+            path_str, error
+        );
+        0
+    };
+
+    while reader.read_line(&mut line).unwrap_or_else(msg) != 0 {
         let mut line_split = line.split(' ');
 
         if line_split.clone().count() == 2 {
             let key_str = line_split.next().unwrap();
 
-            let key: u64 = if key_str.len() == 8 {
-                u32::from_str_radix(key_str, 16)
-                    .unwrap_or_else(|_| panic!("Invalid hex: {}", key_str)) as u64
-            } else if key_str.len() == 16 {
-                u64::from_str_radix(key_str, 16)
-                    .unwrap_or_else(|_| panic!("Invalid hex: {}", key_str))
-            } else {
+            let key = match key_str.len() {
+                8 => u32::from_str_radix(key_str, 16).unwrap_or_else(|_| {
+                    println!("Invalid hex: {}", key_str);
+                    0
+                }) as u64,
+                16 => u64::from_str_radix(key_str, 16).unwrap_or_else(|_| {
+                    println!("Invalid hex: {}", key_str);
+                    0
+                }),
+                _ => {
+                    line.clear();
+                    continue;
+                }
+            };
+
+            if key == 0 {
                 line.clear();
                 continue;
-            };
+            }
 
             lines += hash_map
                 .insert(
@@ -175,18 +185,15 @@ fn load_hashes_from_file(path: &Path, hash_map: &mut HashMap<u64, String>) -> u3
         line.clear();
     }
 
-    println!("File: {} loaded: {} lines", path.to_str().unwrap(), lines);
+    println!("File: {} loaded: {} lines", path_str, lines);
 
     lines
 }
 
 fn add_to_hash_map(hashes_to_insert: &[&str], hash_map: &mut HashMap<u64, String>) {
     for hash_name in hashes_to_insert {
-        hash_map.insert(
-            lol_bin_hashes::fnv1a(hash_name) as u64,
-            hash_name.to_string(),
-        );
-        hash_map.insert(lol_bin_hashes::xxhash(hash_name), hash_name.to_string());
+        hash_map.insert(hashes::fnv1a(hash_name) as u64, hash_name.to_string());
+        hash_map.insert(hashes::xxhash(hash_name), hash_name.to_string());
     }
 }
 

@@ -1,4 +1,4 @@
-use lol_bin_struct::*;
+use structs::*;
 
 use byteorder::{LittleEndian, WriteBytesExt};
 use std::io::Write;
