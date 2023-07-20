@@ -4,11 +4,12 @@ extern crate dtoa;
 extern crate glob;
 extern crate json;
 
-use std::fs::File;
-use std::io::{BufRead, BufReader, Read, Write};
-
-use std::collections::HashMap;
-use std::path::Path;
+use std::{
+    collections::HashMap,
+    fs::File,
+    io::{BufRead, BufReader, Read, Write},
+    path::Path,
+};
 
 mod hashes;
 mod json_reader;
@@ -19,7 +20,7 @@ mod writer;
 
 fn main() {
     let matches = clap::Command::new("BinReader-Rust")
-        .version("0.3.0")
+        .version(env!("CARGO_PKG_VERSION"))
         .author("https://github.com/autergame/")
         .about("League Of Legends Bin Reader And Writter")
         .arg_required_else_help(true)
@@ -58,66 +59,76 @@ fn main() {
         )
         .get_matches();
 
-    if let Some(matches) = matches.subcommand_matches("decode") {
-        let input = matches.get_one::<String>("INPUT").unwrap();
-        let output = matches.get_one::<String>("OUTPUT");
+    match matches.subcommand() {
+        Some(("decode", args)) => {
+            let input = args.get_one::<String>("INPUT").unwrap();
+            let output = args.get_one::<String>("OUTPUT");
 
-        let mut hash_map: HashMap<u64, String> = HashMap::new();
-        add_to_hash_map(&["path", "patch", "value"], &mut hash_map);
+            let mut hash_map: HashMap<u64, String> = HashMap::new();
+            add_to_hash_map(&["path", "patch", "value"], &mut hash_map);
 
-        println!("Loading hashes");
-        let mut lines =
-            load_hashes_from_file(Path::new("files/hashes.bintypes.txt"), &mut hash_map);
-        lines += load_hashes_from_file(Path::new("files/hashes.binfields.txt"), &mut hash_map);
-        lines += load_hashes_from_file(Path::new("files/hashes.binhashes.txt"), &mut hash_map);
-        lines += load_hashes_from_file(Path::new("files/hashes.binentries.txt"), &mut hash_map);
-        lines += load_hashes_from_file(Path::new("files/hashes.lcu.txt"), &mut hash_map);
-        lines += load_hashes_from_file(Path::new("files/hashes.game.txt"), &mut hash_map);
-        println!("Loaded total of hashes: {lines}");
-        println!("Finished loading hashes.\n");
+            println!("Loading hashes");
+            let mut lines =
+                load_hashes_from_file(Path::new("files/hashes.bintypes.txt"), &mut hash_map);
+            lines += load_hashes_from_file(Path::new("files/hashes.binfields.txt"), &mut hash_map);
+            lines += load_hashes_from_file(Path::new("files/hashes.binhashes.txt"), &mut hash_map);
+            lines += load_hashes_from_file(Path::new("files/hashes.binentries.txt"), &mut hash_map);
+            lines += load_hashes_from_file(Path::new("files/hashes.lcu.txt"), &mut hash_map);
+            lines += load_hashes_from_file(Path::new("files/hashes.game.txt"), &mut hash_map);
+            println!("Loaded total of hashes: {lines}");
+            println!("Finished loading hashes.\n");
 
-        if let Some(output) = output {
-            let contents = read_to_u8(Path::new(input));
-            let bin_file = reader::read_bin(&contents);
-            let jsonstr = json_writer::convert_bin_to_json(&bin_file, &mut hash_map);
-            write_u8(Path::new(output), jsonstr.as_bytes());
-        } else {
-            let input_paths = glob::glob(input)
-                .expect("Failed to read glob pattern")
-                .filter_map(Result::ok);
+            match output {
+                Some(output) => {
+                    let contents = read_to_u8(Path::new(input));
+                    let bin_file = reader::read_bin(&contents);
+                    let jsonstr = json_writer::convert_bin_to_json(&bin_file, &mut hash_map);
+                    write_u8(Path::new(output), jsonstr.as_bytes());
+                }
+                None => {
+                    let input_paths = glob::glob(input)
+                        .expect("Failed to read glob pattern")
+                        .filter_map(Result::ok);
 
-            for mut input_path in input_paths {
-                let contents = read_to_u8(&input_path);
-                let bin_file = reader::read_bin(&contents);
-                let jsonstr = json_writer::convert_bin_to_json(&bin_file, &mut hash_map);
-                input_path.set_extension("json");
-                write_u8(&input_path, jsonstr.as_bytes());
-                println!();
+                    for mut input_path in input_paths {
+                        let contents = read_to_u8(&input_path);
+                        let bin_file = reader::read_bin(&contents);
+                        let jsonstr = json_writer::convert_bin_to_json(&bin_file, &mut hash_map);
+                        input_path.set_extension("json");
+                        write_u8(&input_path, jsonstr.as_bytes());
+                        println!();
+                    }
+                }
             }
         }
-    } else if let Some(matches) = matches.subcommand_matches("encode") {
-        let input = matches.get_one::<String>("INPUT").unwrap();
-        let output = matches.get_one::<String>("OUTPUT");
+        Some(("encode", args)) => {
+            let input = args.get_one::<String>("INPUT").unwrap();
+            let output = args.get_one::<String>("OUTPUT");
 
-        if let Some(output) = output {
-            let contents = read_string(Path::new(input));
-            let bin_file = json_reader::convert_json_to_bin(&contents);
-            let bin = writer::write_bin(&bin_file);
-            write_u8(Path::new(output), &bin);
-        } else {
-            let input_paths = glob::glob(input)
-                .expect("Failed to read glob pattern")
-                .filter_map(Result::ok);
+            match output {
+                Some(output) => {
+                    let contents = read_string(Path::new(input));
+                    let bin_file = json_reader::convert_json_to_bin(&contents);
+                    let bin = writer::write_bin(&bin_file);
+                    write_u8(Path::new(output), &bin);
+                }
+                None => {
+                    let input_paths = glob::glob(input)
+                        .expect("Failed to read glob pattern")
+                        .filter_map(Result::ok);
 
-            for mut input_path in input_paths {
-                let contents = read_string(&input_path);
-                let bin_file = json_reader::convert_json_to_bin(&contents);
-                let bin = writer::write_bin(&bin_file);
-                input_path.set_extension("bin");
-                write_u8(&input_path, &bin);
-                println!();
+                    for mut input_path in input_paths {
+                        let contents = read_string(&input_path);
+                        let bin_file = json_reader::convert_json_to_bin(&contents);
+                        let bin = writer::write_bin(&bin_file);
+                        input_path.set_extension("bin");
+                        write_u8(&input_path, &bin);
+                        println!();
+                    }
+                }
             }
         }
+        _ => {}
     }
 }
 
